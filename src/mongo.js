@@ -31,7 +31,8 @@ const restaurantSchema = new mongoose.Schema({
 });
 
 const menuSchema = new mongoose.Schema({
-  restaurant_id: { type: mongoose.Schema.Types.ObjectId, ref: "Restaurant" },
+  restaurant_id: { type: mongoose.Schema.Types.ObjectId, ref: "Restaurant",
+    required: true, },
   name: String,
   description: String,
   price: Number,

@@ -3,7 +3,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 
 import { User } from "../mongo.js";
-import { isAdmin, isAdminOrEmployee, authenticateToken } from "../middlewares/authentication-middleware.js";
+import { isAdmin, isAdminOrCurrentUser, authenticateToken } from "../middlewares/authentication-middleware.js";
 import { isValidID, userExists } from "../middlewares/params-middleware.js";
 
 const router = express.Router();
@@ -68,19 +68,19 @@ router.post("/login", async (request, response) => {
 });
 
 /* ------------------ LIRE TOUS LES UTILISATEURS ------------------ */
-router.get("/", isAdminOrEmployee, async (request, response) => {
+router.get("/", authenticateToken, isAdmin,async (_request, response) => {
   const users = await User.find();
   response.status(200).json(users);
 });
 
 /* ------------------ LIRE UN UTILISATEUR PAR ID ------------------ */
-router.get("/:id", isAdminOrEmployee, isValidID, userExists, async (request, response) => {
+router.get("/:id", authenticateToken, isAdminOrCurrentUser,async (request, response) => {
   const user = await User.findById(request.params.id);
   response.status(200).json(user);
 });
 
 /* ------------------ MODIFIER UN UTILISATEUR ------------------ */
-router.put("/:id", isAdmin, isValidID, userExists, async (request, response) => {
+router.put("/:id", authenticateToken, isAdminOrCurrentUser,async (request, response) => {
   const id = request.params.id;
   const user = await User.findById(id);
   const newEmailUser = await User.findOne({ email: request.body.email });
@@ -108,7 +108,7 @@ router.put("/:id", isAdmin, isValidID, userExists, async (request, response) => 
 });
 
 /* ------------------ SUPPRIMER UN UTILISATEUR ------------------ */
-router.delete("/:id", isAdmin, isValidID, userExists, async (request, response) => {
+router.delete("/:id", authenticateToken, isAdminOrCurrentUser, async (request, response) => {
   const id = request.params.id;
   const user = await User.findByIdAndDelete(id);
   response.status(200).json({ message: `L'utilisateur ${id} a été supprimé avec succès !`, user });
