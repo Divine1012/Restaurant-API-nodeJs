@@ -53,7 +53,7 @@ router.post("/login", async (request, response) => {
     // Générer un token JWT
     const token = jwt.sign(
       { id: user._id, email: user.email, role: user.role },
-      "SECRET_KEY", // ⚠️ à déplacer dans un fichier .env plus tard
+      process.env.JWT_SECRET || "supersecretkey", // ⚠️ à déplacer dans un fichier .env plus tard
       { expiresIn: "2h" }
     );
 
