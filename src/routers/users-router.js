@@ -1,117 +1,175 @@
+// src/routers/users-router.js
 import express from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import dotenv from "dotenv";
 
 import { User } from "../mongo.js";
-import { isAdmin, isAdminOrCurrentUser, authenticateToken } from "../middlewares/authentication-middleware.js";
-import { isValidID, userExists } from "../middlewares/params-middleware.js";
+import {
+  authenticateToken,
+  isAdminOrEmployee,
+  isSelfOrAdmin,
+} from "../middlewares/authentication-middleware.js";
+import {
+  isValidID,
+  userExists,
+} from "../middlewares/params-middleware.js";
+
+dotenv.config();
 
 const router = express.Router();
+const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_long";
 
-/* ------------------ INSCRIPTION ------------------ */
-router.post("/register", async (request, response) => {
+/**
+ * @route   POST /users/register
+ * @desc    Inscription (publique). Rôle forcé à "user" pour éviter l’élévation de privilèges.
+ */
+router.post("/register", async (req, res) => {
   try {
-    const { email, username, password, role } = request.body;
+    const { email, username, password } = req.body || {};
 
-    // Vérifier si l'email existe déjà
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return response.status(409).json({ message: "Email déjà existant, veuillez en utiliser un autre." });
+    if (!email || !username || !password) {
+      return res.status(400).json({ message: "Champs requis : email, username, password" });
     }
 
-    // Hasher le mot de passe
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const exists = await User.findOne({ email });
+    if (exists) {
+      return res.status(409).json({ message: "Email déjà existant, veuillez en utiliser un autre." });
+    }
 
-    // Créer le nouvel utilisateur
+    const hashed = await bcrypt.hash(password, 10);
+
     const newUser = new User({
       email,
       username,
-      password: hashedPassword,
-      role: role || "user",
+      password: hashed,
+      role: "user", // on force "user" à l'inscription publique
     });
 
     await newUser.save();
-    response.status(201).json({ message: "Utilisateur créé avec succès !" });
+    return res.status(201).json({ message: "Utilisateur créé avec succès !" });
   } catch (error) {
-    response.status(500).json({ message: "Erreur lors de l'inscription", error });
+    return res.status(500).json({ message: "Erreur lors de l'inscription", error: error?.message });
   }
 });
 
-/* ------------------ CONNEXION ------------------ */
-router.post("/login", async (request, response) => {
+/**
+ * @route   POST /users/login
+ * @desc    Connexion → retourne un JWT
+ */
+router.post("/login", async (req, res) => {
   try {
-    const { email, password } = request.body;
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ message: "Champs requis : email, password" });
+    }
 
-    // Vérifier l'utilisateur
     const user = await User.findOne({ email });
-    if (!user) return response.status(404).json({ message: "Utilisateur non trouvé" });
+    if (!user) return res.status(404).json({ message: "Utilisateur non trouvé" });
 
-    // Vérifier le mot de passe
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return response.status(400).json({ message: "Mot de passe incorrect" });
+    const ok = await bcrypt.compare(password, user.password);
+    if (!ok) return res.status(401).json({ message: "Identifiants invalides" });
 
-    // Générer un token JWT
     const token = jwt.sign(
-      { id: user._id, email: user.email, role: user.role },
-      process.env.JWT_SECRET || "supersecretkey", // ⚠️ à déplacer dans un fichier .env plus tard
-      { expiresIn: "2h" }
+      { id: user._id.toString(), email: user.email, role: user.role },
+      JWT_SECRET,
+      { expiresIn: "12h", algorithm: "HS256" }
     );
 
-    response.status(200).json({
+    return res.status(200).json({
       message: "Connexion réussie !",
       token,
-      user: { id: user._id, email: user.email, role: user.role },
+      user: { id: user._id, email: user.email, role: user.role, username: user.username },
     });
   } catch (error) {
-    response.status(500).json({ message: "Erreur lors de la connexion", error });
+    return res.status(500).json({ message: "Erreur lors de la connexion", error: error?.message });
   }
 });
 
-/* ------------------ LIRE TOUS LES UTILISATEURS ------------------ */
-router.get("/", authenticateToken, isAdmin,async (_request, response) => {
-  const users = await User.find();
-  response.status(200).json(users);
-});
-
-/* ------------------ LIRE UN UTILISATEUR PAR ID ------------------ */
-router.get("/:id", authenticateToken, isAdminOrCurrentUser,async (request, response) => {
-  const user = await User.findById(request.params.id);
-  response.status(200).json(user);
-});
-
-/* ------------------ MODIFIER UN UTILISATEUR ------------------ */
-router.put("/:id", authenticateToken, isAdminOrCurrentUser,async (request, response) => {
-  const id = request.params.id;
-  const user = await User.findById(id);
-  const newEmailUser = await User.findOne({ email: request.body.email });
-
-  if (newEmailUser !== null && request.body.email !== user.email) {
-    response.status(409).json({ message: "Email déjà existant, veuillez utiliser une autre adresse !" });
-    return;
+/**
+ * @route   GET /users
+ * @desc    Lister tous les utilisateurs (admin/employee)
+ */
+router.get("/", authenticateToken, isAdminOrEmployee, async (_req, res) => {
+  try {
+    const users = await User.find().select("-password");
+    return res.status(200).json(users);
+  } catch (error) {
+    return res.status(500).json({ message: "Erreur de récupération des utilisateurs", error: error?.message });
   }
+});
 
-  bcrypt.hash(request.body.password, 10, async (error, hash) => {
-    if (error) response.status(500).json(error);
-    else {
-      const user = await User.findByIdAndUpdate(
-        id,
-        { ...request.body, password: hash },
-        { new: true }
-      );
-      if (!user) {
-        response.status(404).json({ message: "Utilisateur inexistant !" });
-        return;
+/**
+ * @route   GET /users/:id
+ * @desc    Lire un utilisateur (admin/employee)
+ */
+router.get("/:id", authenticateToken, isAdminOrEmployee, isValidID, userExists, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select("-password");
+    return res.status(200).json(user);
+  } catch (error) {
+    return res.status(500).json({ message: "Erreur de récupération de l'utilisateur", error: error?.message });
+  }
+});
+
+/**
+ * @route   PUT /users/:id
+ * @desc    Modifier un utilisateur (self OU admin)
+ */
+router.put("/:id", authenticateToken, isSelfOrAdmin, isValidID, userExists, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { email, username, password, role } = req.body || {};
+
+    // Check conflit email si changé
+    if (email) {
+      const current = await User.findById(id);
+      if (!current) return res.status(404).json({ message: "Utilisateur inexistant !" });
+
+      if (current.email !== email) {
+        const conflict = await User.findOne({ email });
+        if (conflict) {
+          return res.status(409).json({ message: "Email déjà existant, veuillez utiliser une autre adresse !" });
+        }
       }
-      response.status(200).json({ message: `L'utilisateur ${id} a été modifié avec succès !`, user });
     }
-  });
+
+    const updates = {};
+    if (email) updates.email = email;
+    if (username) updates.username = username;
+
+    if (password) {
+      updates.password = await bcrypt.hash(password, 10);
+    }
+
+    // Le rôle ne peut être modifié que par un admin
+    if (typeof role !== "undefined") {
+      if (req.user?.role === "admin") {
+        updates.role = role;
+      }
+      // sinon on ignore le champ role envoyé par un user non-admin
+    }
+
+    const updated = await User.findByIdAndUpdate(id, updates, { new: true }).select("-password");
+    if (!updated) return res.status(404).json({ message: "Utilisateur inexistant !" });
+
+    return res.status(200).json({ message: `L'utilisateur ${id} a été modifié avec succès !`, user: updated });
+  } catch (error) {
+    return res.status(500).json({ message: "Erreur lors de la mise à jour", error: error?.message });
+  }
 });
 
-/* ------------------ SUPPRIMER UN UTILISATEUR ------------------ */
-router.delete("/:id", authenticateToken, isAdminOrCurrentUser, async (request, response) => {
-  const id = request.params.id;
-  const user = await User.findByIdAndDelete(id);
-  response.status(200).json({ message: `L'utilisateur ${id} a été supprimé avec succès !`, user });
+/**
+ * @route   DELETE /users/:id
+ * @desc    Supprimer un utilisateur (self OU admin)
+ */
+router.delete("/:id", authenticateToken, isSelfOrAdmin, isValidID, userExists, async (req, res) => {
+  try {
+    const deleted = await User.findByIdAndDelete(req.params.id).select("-password");
+    return res.status(200).json({ message: `L'utilisateur ${req.params.id} a été supprimé avec succès !`, user: deleted });
+  } catch (error) {
+    return res.status(500).json({ message: "Erreur lors de la suppression", error: error?.message });
+  }
 });
 
 export default router;

@@ -1,0 +1,220 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "FoodExpress API",
+    "version": "1.0.0",
+    "description": "API RESTful pour la commande de nourriture en ligne"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Serveur local"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "tags": [
+    { "name": "Users", "description": "Gestion des utilisateurs" },
+    { "name": "Restaurants", "description": "Gestion des restaurants" },
+    { "name": "Menus", "description": "Gestion des menus" }
+  ],
+  "paths": {
+    "/users/register": {
+      "post": {
+        "summary": "Crée un nouveau compte utilisateur",
+        "tags": ["Users"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email","username","password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email", "example": "user@mail.com" },
+                  "username": { "type": "string", "example": "User123" },
+                  "password": { "type": "string", "format": "password", "example": "123456" },
+                  "role": { "type": "string", "enum": ["user","admin"], "example": "user" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Utilisateur créé avec succès" },
+          "400": { "description": "Données invalides" }
+        }
+      }
+    },
+    "/users/login": {
+      "post": {
+        "summary": "Connexion d’un utilisateur",
+        "tags": ["Users"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email","password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email", "example": "user@mail.com" },
+                  "password": { "type": "string", "format": "password", "example": "123456" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { 
+            "description": "Connexion réussie avec token JWT",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "properties": { "token": { "type": "string" } } }
+              }
+            }
+          },
+          "401": { "description": "Identifiants invalides" }
+        }
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "summary": "Récupère les infos d’un utilisateur (soi-même ou admin)",
+        "tags": ["Users"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "ID utilisateur" }
+        ],
+        "responses": {
+          "200": { "description": "Détails de l’utilisateur" },
+          "403": { "description": "Non autorisé" },
+          "404": { "description": "Utilisateur non trouvé" }
+        }
+      },
+      "put": {
+        "summary": "Met à jour un utilisateur",
+        "tags": ["Users"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string" },
+                  "username": { "type": "string" },
+                  "password": { "type": "string" },
+                  "role": { "type": "string", "enum": ["user","admin"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Utilisateur mis à jour" },
+          "403": { "description": "Non autorisé" },
+          "404": { "description": "Utilisateur non trouvé" }
+        }
+      },
+      "delete": {
+        "summary": "Supprime un utilisateur (admin seulement)",
+        "tags": ["Users"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Utilisateur supprimé" },
+          "403": { "description": "Non autorisé" },
+          "404": { "description": "Utilisateur non trouvé" }
+        }
+      }
+    },
+
+    "/restaurants": {
+      "get": {
+        "summary": "Liste des restaurants avec pagination et tri",
+        "tags": ["Restaurants"],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer" }, "description": "Page à afficher" },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" }, "description": "Nombre d’éléments par page" },
+          { "name": "sort", "in": "query", "schema": { "type": "string", "enum":["name","address"] }, "description": "Tri des résultats" }
+        ],
+        "responses": { "200": { "description": "Liste des restaurants" } }
+      },
+      "post": {
+        "summary": "Créer un restaurant (admin seulement)",
+        "tags": ["Restaurants"],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name","address","phone","opening_hours"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "address": { "type": "string" },
+                  "phone": { "type": "string" },
+                  "opening_hours": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Restaurant créé" }, "403": { "description": "Non autorisé" } }
+      }
+    },
+
+    "/menus": {
+      "get": {
+        "summary": "Liste des menus avec pagination et tri",
+        "tags": ["Menus"],
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } },
+          { "name": "category", "in": "query", "schema": { "type": "string" } },
+          { "name": "sort", "in": "query", "schema": { "type": "string", "enum":["price","name"] } }
+        ],
+        "responses": { "200": { "description": "Liste des menus" } }
+      },
+      "post": {
+        "summary": "Créer un menu (admin seulement)",
+        "tags": ["Menus"],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["restaurant_id","name","price","category"],
+                "properties": {
+                  "restaurant_id": { "type": "string" },
+                  "name": { "type": "string" },
+                  "description": { "type": "string" },
+                  "price": { "type": "number" },
+                  "category": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Menu créé" }, "403": { "description": "Non autorisé" } }
+      }
+    }
+  }
+}
